@@ -23,6 +23,24 @@ def test_listar_estados_chama_endpoint_correto():
     assert url == f"{collector.base_url}/localidades/estados"
 
 
+def test_listar_municipios_com_uf_usa_rota_por_estado():
+    collector = IBGECollector()
+    with patch.object(collector.session, "get",
+                      return_value=_mock_response([{"id": 3304557}])) as m:
+        collector.listar_municipios(33)
+    url = m.call_args[0][0]
+    assert url == f"{collector.base_url}/localidades/estados/33/municipios"
+
+
+def test_listar_municipios_sem_uf_busca_todos():
+    collector = IBGECollector()
+    with patch.object(collector.session, "get",
+                      return_value=_mock_response([])) as m:
+        collector.listar_municipios()
+    url = m.call_args[0][0]
+    assert url == f"{collector.base_url}/localidades/municipios"
+
+
 def test_buscar_agregado_monta_url_e_params():
     collector = IBGECollector()
     payload = [{"id": "9324", "resultados": []}]

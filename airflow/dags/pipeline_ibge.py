@@ -43,31 +43,18 @@ def transformar_ibge() -> None:
 
 def carregar_postgres_ibge() -> None:
     """Carrega dados IBGE transformados nas tabelas landing do PostgreSQL."""
-    import pandas as pd
+    from src.loaders.postgres_loader import carregar_ibge
 
     engine = criar_engine()
-    processed_dir = f"{PROJECT_DIR}/data/processed"
-
-    try:
-        df_municipios = pd.read_parquet(f"{processed_dir}/municipios")
-        df_municipios.to_sql("municipios_raw", engine, schema="ibge", if_exists="append", index=False)
-        print(f"Municípios carregados: {len(df_municipios)} registros")
-    except Exception as e:
-        print(f"Aviso: Não foi possível carregar municípios - {e}")
-
-    try:
-        df_estados = pd.read_parquet(f"{processed_dir}/estados")
-        df_estados.to_sql("estados_raw", engine, schema="ibge", if_exists="append", index=False)
-        print(f"Estados carregados: {len(df_estados)} registros")
-    except Exception as e:
-        print(f"Aviso: Não foi possível carregar estados - {e}")
+    totais = carregar_ibge(engine, f"{PROJECT_DIR}/data/processed")
+    print(f"Carga IBGE concluída: {totais}")
 
 
 with DAG(
     dag_id="pipeline_dados_ibge",
     default_args=DEFAULT_ARGS,
     description="Pipeline completo de dados IBGE - Coleta, Transformação e Carga",
-    schedule="@daily",
+    schedule_interval="@daily",
     start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
     catchup=False,
     tags=["ibge", "dados_publicos", "pipeline"],

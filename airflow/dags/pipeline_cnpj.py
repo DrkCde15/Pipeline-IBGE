@@ -48,24 +48,18 @@ def transformar_cnpj() -> None:
 
 def carregar_postgres_cnpj() -> None:
     """Carrega dados CNPJ transformados na tabela landing do PostgreSQL."""
-    import pandas as pd
+    from src.loaders.postgres_loader import carregar_cnpj
 
     engine = criar_engine()
-    processed_dir = f"{PROJECT_DIR}/data/processed"
-
-    try:
-        df_cnpjs = pd.read_parquet(f"{processed_dir}/cnpjs")
-        df_cnpjs.to_sql("empresas_raw", engine, schema="cnpj", if_exists="append", index=False)
-        print(f"CNPJs carregados: {len(df_cnpjs)} registros")
-    except Exception as e:
-        print(f"Aviso: Não foi possível carregar CNPJs - {e}")
+    totais = carregar_cnpj(engine, f"{PROJECT_DIR}/data/processed")
+    print(f"Carga CNPJ concluída: {totais}")
 
 
 with DAG(
     dag_id="pipeline_dados_cnpj",
     default_args=DEFAULT_ARGS,
     description="Pipeline de dados de CNPJ - Coleta, Transformação e Carga",
-    schedule="0 6 * * 1",  # Segunda-feira às 6h
+    schedule_interval="0 6 * * 1",  # Segunda-feira às 6h
     start_date=datetime(2024, 1, 1, tzinfo=timezone.utc),
     catchup=False,
     tags=["cnpj", "receita_federal", "dados_publicos"],

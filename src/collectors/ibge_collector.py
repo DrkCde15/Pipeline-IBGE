@@ -1,6 +1,6 @@
 """
 Coletor de dados do IBGE (Instituto Brasileiro de Geografia e Estatística).
-Realiza a coleta de indicadores sociodemográficos e econômicos via API REST.
+Localidades via API v1 e agregados SIDRA via API v3.
 """
 
 import json
@@ -98,84 +98,30 @@ class IBGECollector:
         logger.info(f"Agregado {tabela}/{periodo}/{variavel} [{localidades}]: {len(dados)} itens")
         return dados
 
-    def listar_municipios(self, uf: int | None = None) -> list[dict[str, Any]]:
+    def listar_municipios(self, uf: int | str | None = None) -> list[dict[str, Any]]:
         """Lista todos os municípios do Brasil ou de um estado específico.
 
         Args:
-            uf: Código da Unidade Federativa (ex: 33 = RJ). None para todos.
+            uf: Código (ex: 33) ou sigla (ex: "RJ") da Unidade Federativa.
+                None para todos os municípios do Brasil.
 
         Returns:
             Lista de dicts com dados dos municípios.
         """
-        params: dict[str, Any] = {"output": "json"}
         if uf is not None:
-            params["localidade"] = uf
+            endpoint = f"localidades/estados/{uf}/municipios"
+        else:
+            endpoint = "localidades/municipios"
 
-        dados = self._request_with_retry("localidades/municipios", params)
+        dados = self._request_with_retry(endpoint, {"orderBy": "nome"})
         logger.info(f"Total de municípios obtidos: {len(dados)}")
         return dados
 
     def listar_estados(self) -> list[dict[str, Any]]:
         """Lista todos os estados brasileiros."""
-        return self._request_with_retry("localidades/estados", {"output": "json"})
+        return self._request_with_retry("localidades/estados", {"orderBy": "nome"})
 
-    def listar_indicadores(self) -> list[dict[str, Any]]:
-        """Lista indicadores disponíveis no IBGE."""
-        return self._request_with_retry("indicadores", {"output": "json"})
-
-    def buscar_indicador(
-        self,
-        id_indicador: int,
-        localidade: str = "N7 [all]",
-        periodo: int | None = None,
-    ) -> dict[str, Any]:
-        """Busca dados de um indicador específico.
-
-        Args:
-            id_indicador: ID do indicador IBGE.
-            localidade: Filtro de localidade (padrão: todas as unidades da federação).
-            período: Ano de referência.
-
-        Returns:
-            Dict com os dados do indicador.
-        """
-        params: dict[str, Any] = {"localidade": localidade}
-        if periodo is not None:
-            params["periodo"] = periodo
-
-        dados = self._request_with_retry(f"indicadores/{id_indicador}/resultados", params)
-        logger.info(f"Indicador {id_indicador}: {len(dados)} resultados obtidos")
-        return dados
-
-    def buscar_pib_municipal(self, municipio_id: int) -> list[dict[str, Any]]:
-        """Busca dados do PIB municipal.
-
-        Args:
-            municipio_id: ID do município no IBGE (código IBGE 7 dígitos).
-
-        Returns:
-            Lista com séries históricas do PIB municipal.
-        """
-        return self._request_with_retry(
-            f"bbr/{municipio_id}/indicadores/21",
-            {"output": "json"},
-        )
-
-    def buscar_populacao(self, municipio_id: int) -> list[dict[str, Any]]:
-        """Busca estimativa populacional do município.
-
-        Args:
-            municipio_id: ID do município no IBGE.
-
-        Returns:
-            Lista com estimativas populacionais.
-        """
-        return self._request_with_retry(
-            f"bbr/{municipio_id}/indicadores/47001",
-            {"output": "json"},
-        )
-
-    def salvar_json(self, dados: list[dict[str, Any] | dict[str, Any]], nome_arquivo: str) -> Path:
+    def salvar_json(self, dados: list[dict[str, Any]] | dict[str, Any], nome_arquivo: str) -> Path:
         """Salva os dados em formato JSON.
 
         Args:
@@ -185,7 +131,7 @@ class IBGECollector:
         Returns:
             Caminho do arquivo salvo.
         """
-        caminho = OUTPUT_DIR / 'ibge.json'  # Nome fixo para o arquivo JSON
+        caminho = OUTPUT_DIR / nome_arquivo
         with open(caminho, "w", encoding="utf-8") as f:
             json.dump(dados, f, ensure_ascii=False, indent=2)
         logger.info(f"Dados salvos em: {caminho}")
@@ -208,10 +154,6 @@ class IBGECollector:
         logger.info("Coletando municípios...")
         municipios = self.listar_municipios()
         arquivos["municipios"] = self.salvar_json(municipios, "municipios.json")
-
-        logger.info("Coletando indicadores disponíveis...")
-        indicadores = self.listar_indicadores()
-        arquivos["indicadores"] = self.salvar_json(indicadores, "indicadores.json")
 
         logger.info("=== Fim da coleta completa IBGE ===")
         logger.info(f"Arquivos gerados: {list(arquivos.keys())}")

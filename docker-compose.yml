@@ -1,0 +1,107 @@
+# Stack local (podman): Postgres (metadados do Airflow + banco dados_publicos) + Airflow 2.11.
+#
+# Uso:
+#   cp .env.example .env          # se ainda não existe (o compose lê o .env)
+#   podman compose up -d --build
+#   UI do Airflow: http://localhost:8080
+#
+# Login (Flask-AppBuilder — DEV ONLY, nunca produção):
+#   usuário/senha vêm de AIRFLOW_ADMIN_USER/AIRFLOW_ADMIN_PASSWORD
+#   (padrão admin/admin). Para trocar sem editar arquivo:
+#   AIRFLOW_ADMIN_USER=eu AIRFLOW_ADMIN_PASSWORD='s3nha!' podman compose up -d
+#
+# O Postgres do compose escuta na 5433 do host para não conflitar com um
+# Postgres local na 5432. Dentro do compose, o host é "postgres:5432".
+
+x-airflow-common: &airflow-common
+  build: ./airflow
+  user: "${AIRFLOW_UID:-50000}:0"
+  env_file:
+    - .env
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@postgres/airflow
+    AIRFLOW__CORE__FERNET_KEY: "KI7C-jds6U1SqPhYgVOTA7--KZq7lB7ArPHhBQWeIOw="
+    AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/project/airflow/dags
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    PYTHONPATH: /opt/airflow/project
+    # ---- Login da UI (Flask-AppBuilder, DEV ONLY) ----
+    # Criado pelo serviço airflow-init a partir destas variáveis.
+    AIRFLOW_ADMIN_USER: ${AIRFLOW_ADMIN_USER:-admin}
+    AIRFLOW_ADMIN_PASSWORD: ${AIRFLOW_ADMIN_PASSWORD:-admin}
+    # Sobrescrevem o .env dentro dos containers (fora deles vale o .env local):
+    PG_HOST: postgres
+    PG_PORT: "5432"
+    PG_DATABASE: dados_publicos
+    PG_USER: postgres
+    PG_PASSWORD: postgres
+  volumes:
+    - .:/opt/airflow/project
+  depends_on:
+    postgres:
+      condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./docker/postgres-init:/docker-entrypoint-initdb.d:ro
+      - ./sql:/schema:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U airflow -d airflow"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  airflow-init:
+    <<: *airflow-common
+    entrypoint: /bin/bash
+    command:
+      - -c
+      - |
+        airflow db upgrade \
+        && (airflow users create \
+          --username "$${AIRFLOW_ADMIN_USER:-admin}" \
+          --password "$${AIRFLOW_ADMIN_PASSWORD:-admin}" \
+          --firstname Admin --lastname User \
+          --role Admin --email admin@example.com || true)
+    volumes:
+      - .:/opt/airflow/project
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  webserver:
+    <<: *airflow-common
+    command: webserver
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - .:/opt/airflow/project
+      - airflow-logs:/opt/airflow/logs
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  scheduler:
+    <<: *airflow-common
+    command: scheduler
+    restart: unless-stopped # cobre a corrida caso o provider ignore depends_on
+    volumes:
+      - .:/opt/airflow/project
+      - airflow-logs:/opt/airflow/logs
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:
+  airflow-logs: # compartilhado p/ a UI ler os logs gravados pelo scheduler

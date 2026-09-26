@@ -5,16 +5,12 @@ Realiza transformações, limpeza e enriquecimento de dados coletados.
 
 import logging
 from pathlib import Path
-from typing import Optional
-
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
 from pyspark.sql.types import (
     DoubleType,
     IntegerType,
-    StringType,
-    StructField,
-    StructType,
+    StringType
 )
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -94,6 +90,15 @@ class SparkTransformer:
         logger.info("Transformando dados de municípios...")
 
         uf = "microrregiao.mesorregiao.UF"
+        colunas = set(df.columns)
+
+        def _nested_ou_nulo(caminho: str, tipo):
+            """Extrai coluna aninhada ou retorna NULL tipado se ela não existir."""
+            raiz = caminho.split(".")[0].strip("`")
+            if raiz not in colunas:
+                return F.lit(None).cast(tipo)
+            return F.col(caminho).cast(tipo)
+
         df_transformado = (
             df
             .withColumn("id", F.col("id").cast(IntegerType()))
@@ -108,12 +113,15 @@ class SparkTransformer:
             .withColumn("mesorregiao_nome", F.initcap(F.trim(F.col("microrregiao.mesorregiao.nome"))))
             .withColumn("microrregiao_id", F.col("microrregiao.id").cast(IntegerType()))
             .withColumn("microrregiao_nome", F.initcap(F.trim(F.col("microrregiao.nome"))))
-            .withColumn("regiao_imediata_id", F.col("`regiao-imediata`.id").cast(IntegerType()))
-            .withColumn("regiao_imediata_nome", F.initcap(F.trim(F.col("`regiao-imediata`.nome"))))
-            .withColumn("regiao_intermediaria_id", F.col("`regiao-intermediaria`.id").cast(IntegerType()))
+            .withColumn("regiao_imediata_id", _nested_ou_nulo("`regiao-imediata`.id", IntegerType()))
+            .withColumn(
+                "regiao_imediata_nome",
+                F.initcap(F.trim(_nested_ou_nulo("`regiao-imediata`.nome", StringType()))),
+            )
+            .withColumn("regiao_intermediaria_id", _nested_ou_nulo("`regiao-intermediaria`.id", IntegerType()))
             .withColumn(
                 "regiao_intermediaria_nome",
-                F.initcap(F.trim(F.col("`regiao-intermediaria`.nome"))),
+                F.initcap(F.trim(_nested_ou_nulo("`regiao-intermediaria`.nome", StringType()))),
             )
             .select(
                 "id", "nome", "sigla_uf", "uf_id", "uf_nome",

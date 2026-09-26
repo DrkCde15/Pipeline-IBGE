@@ -243,6 +243,12 @@ CREATE INDEX IF NOT EXISTS idx_municipios_raw_id ON ibge.municipios_raw(id);
 CREATE INDEX IF NOT EXISTS idx_municipios_raw_uf ON ibge.municipios_raw(sigla_uf);
 CREATE INDEX IF NOT EXISTS idx_empresas_raw_cnpj ON cnpj.empresas_raw(cnpj);
 
+-- Guarda de idempotência por dia (A3): a carga faz DELETE + INSERT atômico
+-- por dia, e estes índices impedem duplicata silenciosa dentro do mesmo dia.
+CREATE UNIQUE INDEX IF NOT EXISTS uq_estados_raw_id_dia ON ibge.estados_raw(id, (loaded_at::date));
+CREATE UNIQUE INDEX IF NOT EXISTS uq_municipios_raw_id_dia ON ibge.municipios_raw(id, (loaded_at::date));
+CREATE UNIQUE INDEX IF NOT EXISTS uq_empresas_raw_cnpj_dia ON cnpj.empresas_raw(cnpj, (loaded_at::date));
+
 -- ============================================================
 -- VIEWS ÚTEIS
 -- ============================================================

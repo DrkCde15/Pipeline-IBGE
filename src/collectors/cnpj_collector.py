@@ -209,7 +209,7 @@ class CNPJCollector:
         Returns:
             Caminho do arquivo salvo.
         """
-        caminho = OUTPUT_DIR / 'cnpj.json'  # Nome fixo para o arquivo JSON
+        caminho = OUTPUT_DIR / nome_arquivo
         with open(caminho, "w", encoding="utf-8") as f:
             json.dump(dados, f, ensure_ascii=False, indent=2)
         logger.info(f"Dados salvos em: {caminho}")
