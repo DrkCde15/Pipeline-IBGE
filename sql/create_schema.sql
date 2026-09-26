@@ -162,7 +162,7 @@ CREATE TABLE IF NOT EXISTS cnpj.socios (
     pais VARCHAR(100),
     cpf_representante VARCHAR(11),
     nome_representante VARCHAR(300),
-    created_at TIMESTAMP DEFAULT TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 -- Índices para performance
@@ -171,6 +171,77 @@ CREATE INDEX IF NOT EXISTS idx_empresas_situacao ON cnpj.empresas(situacao_cadas
 CREATE INDEX IF NOT EXISTS idx_empresas_uf ON cnpj.enderecos(uf);
 CREATE INDEX IF NOT EXISTS idx_socios_empresa ON cnpj.socios(empresa_id);
 CREATE INDEX IF NOT EXISTS idx_empresas_atividades_empresa ON cnpj.empresas_atividades(empresa_id);
+
+-- ============================================================
+-- TABELAS LANDING (carga bruta do pipeline via pandas append)
+-- Espelham o output do SparkTransformer; sem PKs para permitir recarga.
+-- A modelagem normalizada acima é populada a partir destas.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS ibge.estados_raw (
+    id INTEGER NOT NULL,
+    sigla VARCHAR(2),
+    nome VARCHAR(100),
+    regiao_id INTEGER,
+    regiao_sigla VARCHAR(2),
+    regiao_nome VARCHAR(100),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS ibge.municipios_raw (
+    id INTEGER NOT NULL,
+    nome VARCHAR(200),
+    sigla_uf VARCHAR(2),
+    uf_id INTEGER,
+    uf_nome VARCHAR(100),
+    regiao_id INTEGER,
+    regiao_sigla VARCHAR(2),
+    regiao_nome VARCHAR(100),
+    mesorregiao_id INTEGER,
+    mesorregiao_nome VARCHAR(100),
+    microrregiao_id INTEGER,
+    microrregiao_nome VARCHAR(100),
+    regiao_imediata_id INTEGER,
+    regiao_imediata_nome VARCHAR(200),
+    regiao_intermediaria_id INTEGER,
+    regiao_intermediaria_nome VARCHAR(200),
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS cnpj.empresas_raw (
+    cnpj VARCHAR(14) NOT NULL,
+    razao_social VARCHAR(300),
+    nome_fantasia VARCHAR(300),
+    situacao_cadastral VARCHAR(20),
+    data_situacao_cadastral VARCHAR(20),
+    motivo_situacao_cadastral TEXT,
+    tipo_juridico VARCHAR(10),
+    porte VARCHAR(20),
+    capital_social DECIMAL(18, 2),
+    natureza_juridica VARCHAR(100),
+    logradouro VARCHAR(300),
+    numero VARCHAR(20),
+    complemento VARCHAR(100),
+    bairro VARCHAR(100),
+    cep VARCHAR(8),
+    municipio VARCHAR(100),
+    uf VARCHAR(2),
+    email VARCHAR(200),
+    telefone1 VARCHAR(15),
+    telefone2 VARCHAR(15),
+    data_abertura VARCHAR(20),
+    ultima_atualizacao VARCHAR(30),
+    atividade_principal TEXT,
+    atividades_secundarias TEXT,
+    socios TEXT,
+    eh_ativa BOOLEAN,
+    loaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_estados_raw_id ON ibge.estados_raw(id);
+CREATE INDEX IF NOT EXISTS idx_municipios_raw_id ON ibge.municipios_raw(id);
+CREATE INDEX IF NOT EXISTS idx_municipios_raw_uf ON ibge.municipios_raw(sigla_uf);
+CREATE INDEX IF NOT EXISTS idx_empresas_raw_cnpj ON cnpj.empresas_raw(cnpj);
 
 -- ============================================================
 -- VIEWS ÚTEIS

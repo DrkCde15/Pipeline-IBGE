@@ -5,6 +5,7 @@ Realiza a consulta de dados cadastrais de empresas brasileiras.
 
 import json
 import logging
+import os
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -18,9 +19,15 @@ load_dotenv()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
 
-# Configurações
-BASE_URL = "https://receitaws.com.br/v1"
-RATE_LIMIT_DELAY = 3  # Segundos entre requisições
+# Configurações (sobrescrevíveis via .env)
+BASE_URL = os.getenv("CNPJ_API_BASE", "https://receitaws.com.br/v1").rstrip("/")
+if BASE_URL.endswith("/cnpj"):
+    BASE_URL = BASE_URL[: -len("/cnpj")]
+try:
+    RATE_LIMIT_DELAY = int(os.getenv("CNPJ_RATE_LIMIT", "3"))  # Segundos entre requisições
+except ValueError:
+    RATE_LIMIT_DELAY = 3
+API_KEY = os.getenv("CNPJ_API_KEY", "")
 MAX_RETRIES = 3
 RETRY_DELAY = 5
 
@@ -30,9 +37,18 @@ OUTPUT_DIR = Path(__file__).parent.parent.parent / "data" / "raw" / "cnpj"
 class CNPJCollector:
     """Coletor de dados de CNPJ via API da Receita Federal."""
 
-    def __init__(self, rate_limit: int = RATE_LIMIT_DELAY) -> None:
-        self.base_url = BASE_URL
-        self.rate_limit = rate_limit
+    def __init__(
+        self,
+        rate_limit: int | None = None,
+        base_url: str | None = None,
+        api_key: str | None = None,
+    ) -> None:
+        base = (base_url or BASE_URL).rstrip("/")
+        if base.endswith("/cnpj"):
+            base = base[: -len("/cnpj")]
+        self.base_url = base
+        self.rate_limit = RATE_LIMIT_DELAY if rate_limit is None else rate_limit
+        self.api_key = API_KEY if api_key is None else api_key
         self.session = requests.Session()
         self.session.headers.update({
             "Accept": "application/json",
@@ -55,6 +71,9 @@ class CNPJCollector:
         """Realiza requisição com retry e tratamento de erros."""
         self._respeitar_rate_limit()
         url = f"{self.base_url}/{endpoint}"
+        params = dict(params or {})
+        if self.api_key and "token" not in params:
+            params["token"] = self.api_key
 
         for attempt in range(1, MAX_RETRIES + 1):
             try:
@@ -104,7 +123,7 @@ class CNPJCollector:
         if len(cnpj_limpo) != 14:
             raise ValueError(f"CNPJ inválido: {cnpj}. Deve conter 14 dígitos.")
 
-        return self._request_with_retry(f"cnjp/{cnpj_limpo}")
+        return self._request_with_retry(f"cnpj/{cnpj_limpo}")
 
     def consultar_cnpjs(self, cnpjs: list[str]) -> list[dict[str, Any]]:
         """Consulta múltiplos CNPJs.
@@ -224,8 +243,7 @@ def main() -> None:
     # Exemplo: consulta de CNPJs públicos conhecidos
     cnpjs_exemplo = [
         "00000000000191",  # Banco do Brasil
-        "00360305000104",  # Caixa Econômica
-        "00000000000191",  # Petrobras (exemplo duplicado)
+        "00360305000104",  # Caixa Econômica Federal
     ]
 
     # Remover duplicatas

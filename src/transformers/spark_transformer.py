@@ -78,7 +78,10 @@ class SparkTransformer:
     def transformar_municipios(self, df: DataFrame) -> DataFrame:
         """Transforma dados de municípios do IBGE.
 
-        - Normaliza colunas de texto (trim, uppercase)
+        O JSON da API é aninhado (microrregiao > mesorregiao > UF > regiao),
+        então as colunas são extraídas por caminho antes de normalizar.
+
+        - Normaliza colunas de texto (trim, initcap/uppercase)
         - Converte tipos de dados
         - Remove registros duplicados
 
@@ -90,16 +93,36 @@ class SparkTransformer:
         """
         logger.info("Transformando dados de municípios...")
 
+        uf = "microrregiao.mesorregiao.UF"
         df_transformado = (
             df
             .withColumn("id", F.col("id").cast(IntegerType()))
             .withColumn("nome", F.initcap(F.trim(F.col("nome"))))
-            .withColumn("sigla_uf", F.upper(F.trim(F.col("sigla"))))
-            .withColumn("regiao_nome", F.initcap(F.trim(F.col("regiao-nome"))))
-            .withColumn("regiao_id", F.col("regiao-id").cast(IntegerType()))
-            .withColumn("microrregiao_id", F.col("microrregiao-id").cast(IntegerType()))
-            .withColumn("microrregiao_nome", F.initcap(F.trim(F.col("microrregiao-nome"))))
-            .drop("sigla", "regiao-nome", "regiao-id", "microrregiao-id", "microrregiao-nome")
+            .withColumn("sigla_uf", F.upper(F.trim(F.col(f"{uf}.sigla"))))
+            .withColumn("uf_id", F.col(f"{uf}.id").cast(IntegerType()))
+            .withColumn("uf_nome", F.initcap(F.trim(F.col(f"{uf}.nome"))))
+            .withColumn("regiao_id", F.col(f"{uf}.regiao.id").cast(IntegerType()))
+            .withColumn("regiao_sigla", F.upper(F.trim(F.col(f"{uf}.regiao.sigla"))))
+            .withColumn("regiao_nome", F.initcap(F.trim(F.col(f"{uf}.regiao.nome"))))
+            .withColumn("mesorregiao_id", F.col("microrregiao.mesorregiao.id").cast(IntegerType()))
+            .withColumn("mesorregiao_nome", F.initcap(F.trim(F.col("microrregiao.mesorregiao.nome"))))
+            .withColumn("microrregiao_id", F.col("microrregiao.id").cast(IntegerType()))
+            .withColumn("microrregiao_nome", F.initcap(F.trim(F.col("microrregiao.nome"))))
+            .withColumn("regiao_imediata_id", F.col("`regiao-imediata`.id").cast(IntegerType()))
+            .withColumn("regiao_imediata_nome", F.initcap(F.trim(F.col("`regiao-imediata`.nome"))))
+            .withColumn("regiao_intermediaria_id", F.col("`regiao-intermediaria`.id").cast(IntegerType()))
+            .withColumn(
+                "regiao_intermediaria_nome",
+                F.initcap(F.trim(F.col("`regiao-intermediaria`.nome"))),
+            )
+            .select(
+                "id", "nome", "sigla_uf", "uf_id", "uf_nome",
+                "regiao_id", "regiao_sigla", "regiao_nome",
+                "mesorregiao_id", "mesorregiao_nome",
+                "microrregiao_id", "microrregiao_nome",
+                "regiao_imediata_id", "regiao_imediata_nome",
+                "regiao_intermediaria_id", "regiao_intermediaria_nome",
+            )
             .dropDuplicates(["id"])
             .orderBy("nome")
         )
@@ -124,9 +147,10 @@ class SparkTransformer:
             .withColumn("id", F.col("id").cast(IntegerType()))
             .withColumn("sigla", F.upper(F.trim(F.col("sigla"))))
             .withColumn("nome", F.initcap(F.trim(F.col("nome"))))
-            .withColumn("regiao_id", F.col("regiao-id").cast(IntegerType()))
-            .withColumn("regiao_nome", F.initcap(F.trim(F.col("regiao-nome"))))
-            .drop("regiao-id", "regiao-nome")
+            .withColumn("regiao_id", F.col("regiao.id").cast(IntegerType()))
+            .withColumn("regiao_sigla", F.upper(F.trim(F.col("regiao.sigla"))))
+            .withColumn("regiao_nome", F.initcap(F.trim(F.col("regiao.nome"))))
+            .select("id", "sigla", "nome", "regiao_id", "regiao_sigla", "regiao_nome")
             .dropDuplicates(["id"])
             .orderBy("id")
         )
