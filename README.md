@@ -1,18 +1,19 @@
 # Pipeline de Dados Públicos Brasileiros
 
-Pipeline completo para ingestão, transformação e armazenamento de dados públicos brasileiros provenientes de APIs governamentais como IBGE e Receita Federal.
+Pipeline completo para ingestão, transformação e armazenamento de dados públicos brasileiros provenientes da API do IBGE.
 
 ## 🎯 Objetivo
 
-Automatizar a coleta de dados públicos brasileiros, aplicar transformações com PySpark e armazenar em PostgreSQL para análises e consultas.
+Automatizar a coleta de dados do IBGE, aplicar transformações com PySpark e armazenar em PostgreSQL para análises e consultas.
 
 ## 📦 Stack Tecnológica
 
 - **Linguagem:** Python 3.10+ (container: Python 3.12)
 - **Orquestração:** Apache Airflow 2.11.2 (última série 2.x, EOL abr/2026)
 - **Processamento:** PySpark 3.5+
+- **Data Quality:** Pandera (portão pós-coleta + portão pós-transformação)
 - **Banco de Dados:** PostgreSQL
-- **APIs:** IBGE (Localidades v1 + Agregados SIDRA v3), Receita Federal (CNPJ via ReceitaWS)
+- **APIs:** IBGE (Localidades v1 + Agregados SIDRA v3)
 
 ## 📁 Estrutura do Projeto
 
@@ -27,12 +28,13 @@ Automatizar a coleta de dados públicos brasileiros, aplicar transformações co
 ├── src/
 │   ├── __init__.py
 │   ├── collectors/
-│   │   ├── ibge_collector.py
-│   │   └── cnpj_collector.py
+│   │   └── ibge_collector.py
 │   ├── transformers/
 │   │   └── spark_transformer.py
 │   └── loaders/
 │       └── postgres_loader.py
+│   └── validation/
+│       └── schemas.py
 ├── sql/
 │   └── create_schema.sql
 ├── airflow/
@@ -40,8 +42,7 @@ Automatizar a coleta de dados públicos brasileiros, aplicar transformações co
 │   └── dags/
 │       ├── __init__.py
 │       ├── common.py
-│       ├── pipeline_ibge.py
-│       └── pipeline_cnpj.py
+│       └── pipeline_ibge.py
 ├── notebooks/
 │   └── 01_exploracao_dados_publicos.ipynb
 ├── docs/
@@ -49,8 +50,8 @@ Automatizar a coleta de dados públicos brasileiros, aplicar transformações co
 └── tests/
     ├── __init__.py
     ├── test_ibge_collector.py
-    ├── test_cnpj_collector.py
-    └── test_postgres_loader.py
+    ├── test_postgres_loader.py
+    └── test_validation.py
 ```
 
 ## 🚀 Setup
@@ -75,9 +76,6 @@ cp .env.example .env
 | `IBGE_API_BASE` | API de localidades (v1) | `https://servicodados.ibge.gov.br/api/v1` |
 | `IBGE_AGREGADOS_BASE` | API de agregados SIDRA (v3) | `https://servicodados.ibge.gov.br/api/v3/agregados` |
 | `IBGE_TIMEOUT` | Timeout das requisições (s) | `30` |
-| `CNPJ_API_BASE` | API de CNPJ | `https://receitaws.com.br/v1/cnpj` |
-| `CNPJ_API_KEY` | Token ReceitaWS (opcional) | vazio (3 req/min no plano gratuito) |
-| `CNPJ_RATE_LIMIT` | Segundos entre requisições | `3` |
 | `SPARK_MASTER` / `SPARK_APP_NAME` | Spark local | `local[*]` |
 | `AIRFLOW_ADMIN_USER` / `AIRFLOW_ADMIN_PASSWORD` | Login da UI (DEV ONLY) | `admin`/`admin` |
 | `AIRFLOW_UID` | UID dos containers (escrever em `./data`) | `1000` (seu `id -u`) |
@@ -93,11 +91,10 @@ createdb -U postgres dados_publicos
 psql -U postgres -d dados_publicos -f sql/create_schema.sql
 ```
 
-### 4. Executar coletores manualmente
+### 4. Executar o coletor manualmente
 
 ```bash
 python -m src.collectors.ibge_collector
-python -m src.collectors.cnpj_collector
 ```
 
 Exemplo de agregado SIDRA (população estimada do Brasil, 2024):
@@ -121,20 +118,28 @@ python -m src.transformers.spark_transformer
 pytest tests/ -q
 ```
 
-11 testes (coletores com HTTP mockado + carga com engine mockada — sem rede nem banco).
+14 testes (coletores com HTTP mockado, carga com engine mockada, schemas de
+DQ — sem rede nem banco).
 
-### 7. Explorar no notebook
+### 7. Data quality (2 portões, `src/validation/schemas.py`)
+
+- **Portão 1 (pós-coleta):** lote vazio ou sem campos estruturais (id/sigla,
+  hierarquia até a UF) levanta `DataQualityError` antes de persistir o raw.
+- **Portão 2 (pós-transformação):** schemas Pandera barram `id` duplicado ou
+  nulo, `sigla_uf` fora das 27 UFs e tipos errados — **antes** do DELETE, de
+  modo que um lote reprovado nunca apaga o dado bom do dia.
+
+### 8. Explorar no notebook
 
 ```bash
 jupyter notebook notebooks/01_exploracao_dados_publicos.ipynb
 ```
 
 O notebook lê `data/processed/` primeiro (parquet do transformer) e só usa o
-raw como fallback. As células de CNPJ exigem dados de CNPJ coletados
-(`python -m src.collectors.cnpj_collector`) — sem eles, a célula de carga
-falha alto em vez de pular as análises em silêncio.
+raw como fallback. Sem dados coletados, a célula de carga falha alto em vez
+de pular as análises em silêncio.
 
-### 7. Iniciar Airflow
+### 9. Iniciar Airflow
 
 **Opção A — Podman (recomendado):**
 
@@ -165,9 +170,9 @@ airflow scheduler &
 airflow webserver &
 ```
 
-Duas DAGs: `pipeline_dados_ibge` (diária) e `pipeline_dados_cnpj` (segundas 6h).
-Cada uma executa coleta → transformação PySpark → carga nas tabelas landing
-(`ibge.*_raw`, `cnpj.empresas_raw`) via `src/loaders/postgres_loader.py`.
+Uma DAG: `pipeline_dados_ibge` (diária).
+Ela executa coleta → transformação PySpark → carga nas tabelas landing
+(`ibge.*_raw`) via `src/loaders/postgres_loader.py`.
 A carga é idempotente por dia (DELETE + INSERT na mesma transação) e qualquer
 falha reprova a task para acionar o retry — ver `sql/create_schema.sql`
 (UNIQUE por dia nas `*_raw`).
@@ -182,12 +187,6 @@ falha reprova a task para acionar o retry — ver `sql/create_schema.sql`
 ### IBGE — Agregados SIDRA (v3)
 
 - Séries por tabela/período/variável e recorte territorial (ex.: tabela 6579, população estimada)
-
-### Receita Federal
-
-- Dados de empresas (CNPJ)
-- Situação cadastral
-- Atividades econômicas (CNAE)
 
 ## 🔒 Segurança
 

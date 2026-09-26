@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from src.loaders.postgres_loader import carregar_cnpj, carregar_ibge, carregar_tabela
+from src.loaders.postgres_loader import carregar_ibge, carregar_tabela
 
 
 def _mock_engine():
@@ -23,7 +23,10 @@ def _mock_engine():
 
 def test_carregar_tabela_apaga_antes_de_inserir_na_mesma_conexao():
     engine, conn = _mock_engine()
-    df = pd.DataFrame({"id": [1, 2]})
+    df = pd.DataFrame([
+        {"id": 3550308, "nome": "Sao Paulo", "sigla_uf": "SP"},
+        {"id": 3304557, "nome": "Rio de Janeiro", "sigla_uf": "RJ"},
+    ])
 
     chamadas = []
     conn.execute.side_effect = lambda *a, **k: chamadas.append("delete")
@@ -67,17 +70,3 @@ def test_carregar_ibge_le_dois_parquets_e_carrega_duas_tabelas():
     assert lidos[0].endswith("municipios") and lidos[1].endswith("estados")
     tabelas = [c.args[1] for c in m_carga.call_args_list]
     assert tabelas == ["municipios_raw", "estados_raw"]
-
-
-def test_carregar_cnpj_carrega_empresas_raw():
-    engine, _ = _mock_engine()
-    df = pd.DataFrame({"cnpj": ["00000000000191"]})
-
-    with patch("src.loaders.postgres_loader.pd.read_parquet",
-               return_value=df), \
-         patch("src.loaders.postgres_loader.carregar_tabela",
-               return_value=1) as m_carga:
-        totais = carregar_cnpj(engine, "/proc")
-
-    assert totais == {"cnpjs": 1}
-    assert m_carga.call_args.args[1:3] == ("empresas_raw", "cnpj")

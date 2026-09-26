@@ -9,4 +9,5 @@ jupyter>=1.0.0
 matplotlib>=3.8.0
 seaborn>=0.13.0
 apache-airflow==2.11.2
+pandera>=0.20  # schemas de data quality (src/validation)
 pytest>=8.0.0

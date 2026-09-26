@@ -7,6 +7,9 @@ Qualquer exceção propaga para falhar a task do Airflow (com retry).
 
 As tabelas ``*_raw`` têm UNIQUE por dia (``(id, loaded_at::date)``) como
 guarda no banco — ver ``sql/create_schema.sql``.
+
+Portão 2 de data quality: o lote é validado contra ``src.validation.SCHEMAS``
+**antes** do DELETE — lote reprovado nunca apaga o dado bom do dia.
 """
 
 import logging
@@ -15,6 +18,8 @@ from pathlib import Path
 import pandas as pd
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
+
+from src.validation.schemas import SCHEMAS
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +31,7 @@ def carregar_tabela(
     delete_sql: str,
     engine: Engine,
 ) -> int:
-    """DELETE do dia + INSERT do lote na mesma transação.
+    """Valida (DQ), DELETE do dia + INSERT do lote na mesma transação.
 
     Args:
         df: Lote a carregar (já transformado).
@@ -37,7 +42,15 @@ def carregar_tabela(
 
     Returns:
         Quantidade de registros carregados.
+
+    Raises:
+        pandera.errors.SchemaError: lote reprovado no portão 2 (nada é
+            apagado nem inserido — a validação roda antes da transação).
     """
+    validator = SCHEMAS.get((schema, tabela))
+    if validator is not None:
+        validator.validate(df)
+        logger.info(f"DQ {schema}.{tabela} OK: {len(df)} registros")
     with engine.begin() as conn:
         conn.execute(text(delete_sql))
         df.to_sql(tabela, conn, schema=schema, if_exists="append", index=False)
@@ -68,16 +81,3 @@ def carregar_ibge(engine: Engine, processed_dir: str | Path) -> dict[str, int]:
     )
 
     return {"municipios": n_municipios, "estados": n_estados}
-
-
-def carregar_cnpj(engine: Engine, processed_dir: str | Path) -> dict[str, int]:
-    """Carrega CNPJs transformados na landing ``cnpj.empresas_raw``."""
-    df_cnpjs = pd.read_parquet(Path(processed_dir) / "cnpjs")
-    n = carregar_tabela(
-        df_cnpjs,
-        "empresas_raw",
-        "cnpj",
-        "DELETE FROM cnpj.empresas_raw WHERE loaded_at::date = CURRENT_DATE",
-        engine,
-    )
-    return {"cnpjs": n}

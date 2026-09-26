@@ -17,4 +17,5 @@ RUN pip install --no-cache-dir \
     sqlalchemy \
     psycopg2-binary \
     python-dotenv \
-    requests
+    requests \
+    "pandera>=0.20"

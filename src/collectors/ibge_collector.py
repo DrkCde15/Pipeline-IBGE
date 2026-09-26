@@ -13,6 +13,8 @@ from typing import Any
 import requests
 from dotenv import load_dotenv
 
+from src.validation.schemas import validar_estados_raw, validar_municipios_raw
+
 load_dotenv()
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -149,10 +151,12 @@ class IBGECollector:
 
         logger.info("Coletando estados...")
         estados = self.listar_estados()
+        validar_estados_raw(estados)  # portão 1: falha alto antes de persistir
         arquivos["estados"] = self.salvar_json(estados, "estados.json")
 
         logger.info("Coletando municípios...")
         municipios = self.listar_municipios()
+        validar_municipios_raw(municipios)  # portão 1: falha alto antes de persistir
         arquivos["municipios"] = self.salvar_json(municipios, "municipios.json")
 
         logger.info("=== Fim da coleta completa IBGE ===")
